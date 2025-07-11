@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NBA Roster & Trade Decision Tool</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+                sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState } = React;
+
+        const capOptions = [
+          { id: "RoomTeam", label: "Room Team", description: "Under the salary cap ($154.7M) with room to sign players" },
+          { id: "NonTaxTeam", label: "Non-Tax Team", description: "Over cap but under the luxury tax ($187.9M)" },
+          { id: "TaxTeam", label: "Tax Team", description: "Over luxury tax but under the first apron ($195.9M)" },
+          { id: "FirstApronTeam", label: "First Apron Team", description: "Between the first and second aprons ($195.9M-$207.8M)" },
+          { id: "SecondApronTeam", label: "Second Apron Team", description: "Over the second apron ($207.8M+) with strictest limitations" },
+        ];
+
+        const toolsByCapStatus = {
+          RoomTeam: [
+            { id: "CapSpace", label: "Use Cap Space", description: "Sign players using available cap room" },
+            { id: "RoomMLE", label: "Room MLE ($8.8M)", description: "Mid-level exception for teams with cap space" },
+            { id: "TradeRoomPlus", label: "Trade Using Room + $250k", description: "Acquire players using cap room plus additional $250k cushion" },
+            { id: "VetMin", label: "Veteran Minimum", description: "Sign players to minimum contracts" },
+            { id: "RookieSign", label: "Sign Draft Picks", description: "Sign first and second-round picks" },
+            { id: "UseTPA", label: "Disabled Player Exception", description: "Replace injured players (lesser of 50% salary or NT-MLE)" },
+          ],
+          NonTaxTeam: [
+            { id: "NTMLE", label: "Non-Taxpayer MLE ($14.1M)", description: "Full mid-level exception" },
+            { id: "BAE", label: "Bi-Annual Exception ($5.1M)", description: "Can be used every other year" },
+            { id: "SNT_Acquire", label: "Sign-and-Trade (Acquire)", description: "Receive a player via sign-and-trade" },
+            { id: "TradeStandard", label: "Standard Trade Matching (100% + $250k)", description: "Match salaries within 100% plus $250k" },
+            { id: "TradeAggregated", label: "Aggregated Trade Matching", description: "Combine multiple contracts to match salaries" },
+            { id: "TradeExpanded", label: "Expanded Trade Matching", description: "200% or outgoing + $8.5M for trades" },
+            { id: "TPEUse", label: "Trade Player Exception", description: "Use existing trade exceptions" },
+            { id: "VetMin", label: "Veteran Minimum", description: "Sign players to minimum contracts" },
+            { id: "RookieSign", label: "Sign Draft Picks", description: "Sign first and second-round picks" },
+            { id: "UseTPA", label: "Disabled Player Exception", description: "Replace injured players" },
+            { id: "StretchWaive", label: "Stretch & Waive", description: "Spread dead money over multiple years" },
+          ],
+          TaxTeam: [
+            { id: "NTMLE", label: "Non-Taxpayer MLE ($14.1M)", description: "Full mid-level exception (hard caps at first apron)" },
+            { id: "BAE", label: "Bi-Annual Exception ($5.1M)", description: "Can be used every other year (hard caps at first apron)" },
+            { id: "TPMLE", label: "Taxpayer MLE ($5.7M)", description: "Reduced mid-level exception (no hard cap)" },
+            { id: "SNT_Acquire", label: "Sign-and-Trade (Acquire)", description: "Receive a player via sign-and-trade (hard caps at first apron)" },
+            { id: "TradeStandard", label: "Standard Trade Matching (100% + $250k)", description: "Match salaries within 100% plus $250k" },
+            { id: "TradeAggregated", label: "Aggregated Trade Matching", description: "Combine multiple contracts (hard caps at second apron)" },
+            { id: "TradeExpanded", label: "Expanded Trade Matching", description: "200% or outgoing + $8.5M (hard caps at first apron)" },
+            { id: "TPEUse", label: "Trade Player Exception", description: "Use existing trade exceptions" },
+            { id: "VetMin", label: "Veteran Minimum", description: "Sign players to minimum contracts" },
+            { id: "RookieSign", label: "Sign Draft Picks", description: "Sign first and second-round picks" },
+            { id: "UseTPA", label: "Disabled Player Exception", description: "Replace injured players" },
+            { id: "StretchWaive", label: "Stretch & Waive", description: "Spread dead money over multiple years" },
+          ],
+          FirstApronTeam: [
+            { id: "TPMLE", label: "Taxpayer MLE ($5.7M)", description: "Reduced mid-level exception" },
+            { id: "TradeStandardOnly", label: "Standard Trade Matching Only", description: "100% + $250k (NO salary aggregation)" },
+            { id: "VetMin", label: "Veteran Minimum", description: "Sign players to minimum contracts" },
+            { id: "Use2Way", label: "Two-Way Contracts", description: "Sign players to two-way deals" },
+            { id: "RookieSign", label: "Sign Draft Picks", description: "Sign first and second-round picks" },
+            { id: "UseTPA", label: "Disabled Player Exception", description: "Replace injured players" },
+            { id: "StretchWaive", label: "Stretch & Waive", description: "Spread dead money over multiple years" },
+          ],
+          SecondApronTeam: [
+            { id: "VetMin", label: "Veteran Minimum", description: "Sign players to minimum contracts only" },
+            { id: "TradeLimitedSevere", label: "Severely Limited Trades", description: "Cannot aggregate salaries, take back more money, or use cash" },
+            { id: "RookieSign", label: "Sign Draft Picks", description: "Sign first and second-round picks" },
+            { id: "Use2Way", label: "Two-Way Contracts", description: "Sign players to two-way deals" },
+            { id: "StretchWaive", label: "Stretch & Waive", description: "Spread dead money over multiple years" },
+          ],
+        };
+
+        const toolImplications = {
+          CapSpace: {
+            pros: [
+              "Maximum flexibility to sign free agents",
+              "Can offer contracts up to the max salary",
+              "Can front-load or back-load contracts",
+              "No hard cap restrictions"
+            ],
+            cons: [
+              "Must renounce cap holds on existing free agents",
+              "Lose Bird Rights on renounced players",
+              "Cannot exceed the cap once space is used"
+            ],
+            restrictions: []
+          },
+          RoomMLE: {
+            pros: [
+              "Additional $8.8M to use after cap space",
+              "3-year contracts allowed",
+              "Can be split among multiple players"
+            ],
+            cons: [
+              "Cannot use Non-Taxpayer MLE",
+              "Cannot use Bi-Annual Exception",
+              "Limited to teams under the cap"
+            ],
+            restrictions: []
+          },
+          TradeRoomPlus: {
+            pros: [
+              "Can absorb contracts using cap space",
+              "Additional $250k cushion beyond available room",
+              "No need to match salaries",
+              "Can take on bad contracts for assets"
+            ],
+            cons: [
+              "Limited to available cap space plus $250k",
+              "Cannot simultaneously use traded player exceptions",
+              "Reduces available cap space for free agents"
+            ],
+            restrictions: []
+          },
+          NTMLE: {
+            pros: [
+              "Up to $14.1M available",
+              "Can offer up to 4-year contracts",
+              "Can be split among multiple players",
+              "5% raises allowed"
+            ],
+            cons: [
+              "Triggers hard cap at first apron if used for 3+ years or $5.7M+",
+              "Cannot exceed apron for ANY reason once triggered",
+              "Must stay under apron all season"
+            ],
+            restrictions: ["Hard cap at $195.9M if: Contract is 3+ years OR salary is $5.7M+"]
+          },
+          BAE: {
+            pros: [
+              "Additional $5.1M exception",
+              "2-year contracts allowed",
+              "Can be used with other exceptions"
+            ],
+            cons: [
+              "Triggers hard cap at first apron",
+              "Only available every other year",
+              "Cannot be combined with sign-and-trades"
+            ],
+            restrictions: ["Hard cap at $195.9M (first apron)", "Available every other year"]
+          },
+          SNT_Acquire: {
+            pros: [
+              "Can acquire players you couldn't sign outright",
+              "Maintains Bird Rights on the acquired player",
+              "Can be part of larger trades"
+            ],
+            cons: [
+              "Triggers hard cap at first apron",
+              "3-year minimum contract length",
+              "Must send out assets in return"
+            ],
+            restrictions: ["Hard cap at $195.9M (first apron)", "Cannot re-trade player for 3 months"]
+          },
+          TradeStandard: {
+            pros: [
+              "Match within 100% of outgoing salary plus $250k",
+              "Can be used multiple times",
+              "Creates trade exception from salary differential",
+              "No hard cap implications"
+            ],
+            cons: [
+              "Must send out nearly equal salary",
+              "Cannot combine with other matching rules",
+              "Limited flexibility compared to room trades"
+            ],
+            restrictions: []
+          },
+          TradeAggregated: {
+            pros: [
+              "Can combine multiple contracts to match salaries",
+              "Greater flexibility in trade construction",
+              "Useful for acquiring higher-salaried players",
+              "Can aggregate 2+ outgoing contracts"
+            ],
+            cons: [
+              "Triggers hard cap at second apron",
+              "Cannot re-aggregate recently acquired players for 2 months",
+              "Complex rules on minimum salary players"
+            ],
+            restrictions: ["Triggers hard cap at $207.8M (second apron)"]
+          },
+          TradeExpanded: {
+            pros: [
+              "Can take back up to 200% of outgoing salary (for salaries under $8.3M)",
+              "Or outgoing salary plus $8.5M (for salaries $8.3M-$33.1M)",
+              "Or 125% plus $250k (for salaries over $33.1M)",
+              "Maximum flexibility for trades"
+            ],
+            cons: [
+              "Triggers hard cap at first apron",
+              "Only available to non-taxpayer teams",
+              "Must be simultaneous trade"
+            ],
+            restrictions: ["Hard cap at $195.9M (first apron)"]
+          },
+          TPEUse: {
+            pros: [
+              "Can acquire players without sending salary back",
+              "Created from previous trades",
+              "Can be used within one year",
+              "No immediate salary matching required"
+            ],
+            cons: [
+              "Limited to size of exception created",
+              "Expires after one year",
+              "Cannot be combined with other exceptions",
+              "Cannot use pre-existing TPEs if over first apron"
+            ],
+            restrictions: ["Pre-existing TPEs frozen if over first apron"]
+          },
+          TPMLE: {
+            pros: [
+              "Up to $5.7M available",
+              "Can offer 2-year contracts",
+              "No hard cap triggered",
+              "Available to teams over luxury tax"
+            ],
+            cons: [
+              "Much smaller than Non-Taxpayer MLE",
+              "Cannot be used in sign-and-trades",
+              "Limited player pool at this salary",
+              "Not available to teams over second apron"
+            ],
+            restrictions: ["Cannot be used if over second apron"]
+          },
+          TradeStandardOnly: {
+            pros: [
+              "Can still make trades despite tax status",
+              "100% matching plus $250k cushion"
+            ],
+            cons: [
+              "Cannot aggregate salaries",
+              "Must match nearly dollar-for-dollar",
+              "Very limited trade flexibility",
+              "Difficult to improve roster via trade"
+            ],
+            restrictions: ["No salary aggregation allowed"]
+          },
+          VetMin: {
+            pros: [
+              "Always available regardless of cap situation",
+              "League subsidizes portion for vets with 3+ years",
+              "No cap implications",
+              "Can sign throughout the season"
+            ],
+            cons: [
+              "Limited to minimum salary scale",
+              "Harder to attract quality players",
+              "1-2 year contracts only"
+            ],
+            restrictions: []
+          },
+          TradeLimitedSevere: {
+            pros: [
+              "Can still make trades if needed"
+            ],
+            cons: [
+              "Cannot aggregate salaries",
+              "Cannot take back more salary than sent out",
+              "Cannot use cash in trades",
+              "Cannot trade first-round picks 7 years out",
+              "Frozen pick in draft"
+            ],
+            restrictions: ["No aggregation", "No cash", "Cannot take back more salary", "Pick restrictions"]
+          },
+          Use2Way: {
+            pros: [
+              "Doesn't count against salary cap",
+              "Can develop young talent",
+              "Flexible roster management",
+              "Can have up to 3 two-way players"
+            ],
+            cons: [
+              "Limited to 50 NBA games",
+              "Lower salary for players",
+              "Must have roster spot to convert",
+              "Players must have 3 or fewer years of service"
+            ],
+            restrictions: ["50 game limit", "Maximum 3 two-way players", "3 or fewer years of service"]
+          },
+          RookieSign: {
+            pros: [
+              "Cost-controlled contracts",
+              "Rookie scale predetermined",
+              "Team options for years 3 and 4",
+              "Can extend before free agency"
+            ],
+            cons: [
+              "Must use cap space or exception",
+              "Limited to draft position scale",
+              "Must sign within deadlines"
+            ],
+            restrictions: []
+          },
+          UseTPA: {
+            pros: [
+              "Replace injured player mid-season",
+              "Lesser of 50% of injured player's salary or Non-Tax MLE ($14.1M)",
+              "Can be crucial for playoff runs",
+              "Additional roster flexibility"
+            ],
+            cons: [
+              "Requires significant injury (player out through June 15)",
+              "Complex qualification process",
+              "Limited time to use (July 1 - January 15)",
+              "Cannot be used if injury occurred with another team"
+            ],
+            restrictions: ["Requires NBA approval", "Cannot apply if injury occurred with another team"]
+          },
+          StretchWaive: {
+            pros: [
+              "Creates immediate cap relief",
+              "Spreads dead money over multiple years",
+              "Can help get under tax or apron"
+            ],
+            cons: [
+              "Dead money counts against cap for years",
+              "Still paying player not on roster",
+              "Reduces future flexibility"
+            ],
+            restrictions: ["Formula: (Years remaining × 2) + 1"]
+          }
+        };
+
+        const NBACapDecisionTool = () => {
+          const [selectedCap, setSelectedCap] = useState("");
+          const [selectedTool, setSelectedTool] = useState("");
+          const [teamSalary, setTeamSalary] = useState("");
+
+          const availableTools = selectedCap ? toolsByCapStatus[selectedCap] : [];
+          const implications = selectedTool ? (toolImplications[selectedTool] || {
+            pros: ["Details not available"],
+            cons: ["Details not available"],
+            restrictions: []
+          }) : null;
+
+          const handleCapChange = (e) => {
+            setSelectedCap(e.target.value);
+            setSelectedTool(""); // Reset tool selection when cap status changes
+          };
+
+          const handleToolChange = (e) => {
+            setSelectedTool(e.target.value);
+          };
+
+          const handleSalaryChange = (e) => {
+            const value = e.target.value.replace(/[^0-9.]/g, '');
+            setTeamSalary(value);
+          };
+
+          const getCapStatusColor = (capId) => {
+            switch(capId) {
+              case "RoomTeam": return "text-green-400";
+              case "NonTaxTeam": return "text-blue-400";
+              case "TaxTeam": return "text-yellow-400";
+              case "FirstApronTeam": return "text-orange-400";
+              case "SecondApronTeam": return "text-red-400";
+              default: return "text-gray-400";
+            }
+          };
+
+          const getTeamCapStatus = (salary) => {
+            const sal = parseFloat(salary);
+            if (sal < 154.6) return "Under Cap";
+            if (sal < 187.9) return "Under Tax";
+            if (sal < 195.9) return "Over Tax";
+            if (sal < 207.8) return "Over 1st Apron";
+            return "Over 2nd Apron";
+          };
+
+          const formatSalary = (value) => {
+            if (!value) return "";
+            const num = parseFloat(value);
+            return isNaN(num) ? "" : `${num.toFixed(1)}M`;
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-900 text-white p-6">
+              <div className="max-w-4xl mx-auto">
+                <div className="mb-8">
+                  <h1 className="text-4xl font-bold mb-2">NBA Roster & Trade Decision Tool</h1>
+                  <p className="text-gray-400">Select your team's cap status to see available roster-building tools and trade options (2025-26 Season)</p>
+                </div>
+
+                {/* Cap Status Selection */}
+                <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Current Team Salary (millions)</label>
+                      <input
+                        type="text"
+                        value={teamSalary}
+                        onChange={handleSalaryChange}
+                        placeholder="e.g., 175.5"
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                      />
+                      {teamSalary && (
+                        <p className="mt-2 text-sm">
+                          <span className="text-gray-400">Status: </span>
+                          <span className={
+                            parseFloat(teamSalary) < 154.6 ? "text-green-400" :
+                            parseFloat(teamSalary) < 187.9 ? "text-blue-400" :
+                            parseFloat(teamSalary) < 195.9 ? "text-yellow-400" :
+                            parseFloat(teamSalary) < 207.8 ? "text-orange-400" :
+                            "text-red-400"
+                          }>
+                            {getTeamCapStatus(teamSalary)} ({formatSalary(teamSalary)})
+                          </span>
+                        </p>
+                      )}
+                      {/* Room to Aprons */}
+                    {teamSalary && selectedTool && (
+                      <div className="mt-4 p-3 bg-gray-700 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2">Room to Thresholds:</h4>
+                        <div className="space-y-2 text-xs">
+                          {parseFloat(teamSalary) < 195.9 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">To 1st Apron:</span>
+                              <span className="text-yellow-400">
+                                ${(195.9 - parseFloat(teamSalary)).toFixed(1)}M
+                              </span>
+                            </div>
+                          )}
+                          {parseFloat(teamSalary) < 207.8 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">To 2nd Apron:</span>
+                              <span className="text-red-400">
+                                ${(207.8 - parseFloat(teamSalary)).toFixed(1)}M
+                              </span>
+                            </div>
+                          )}
+                          {parseFloat(teamSalary) >= 195.9 && (
+                            <div className="text-center text-gray-500 py-2">
+                              {parseFloat(teamSalary) >= 207.8 ? 
+                                "Already over 2nd apron - most restrictive rules apply" :
+                                "Already over 1st apron - limited flexibility"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Team Cap Status</label>
+                      <select
+                        value={selectedCap}
+                        onChange={handleCapChange}
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                      >
+                        <option value="">Select your team's cap situation...</option>
+                        {capOptions.map(opt => (
+                          <option key={opt.id} value={opt.id}>{opt.label} - {opt.description}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {selectedCap && (
+                    <>
+                      <div className={`mt-4 p-4 bg-gray-700 rounded-lg ${getCapStatusColor(selectedCap)}`}>
+                        <h3 className="font-semibold mb-1">
+                          {capOptions.find(opt => opt.id === selectedCap)?.label}
+                        </h3>
+                        <p className="text-sm text-gray-300">
+                          {capOptions.find(opt => opt.id === selectedCap)?.description}
+                        </p>
+                      </div>
+
+                      {/* Trade Rules Summary */}
+                      <div className="mt-4 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                        <h4 className="font-semibold mb-2 text-blue-400">📊 Trade Matching Rules</h4>
+                        <div className="text-sm text-gray-300">
+                          {selectedCap === "RoomTeam" && (
+                            <ul className="space-y-1">
+                              <li>• Can absorb contracts using cap space + $250k</li>
+                              <li>• No salary matching required</li>
+                              <li>• Most flexible trade options</li>
+                            </ul>
+                          )}
+                          {(selectedCap === "NonTaxTeam" || selectedCap === "TaxTeam") && (
+                            <ul className="space-y-1">
+                              <li>• Standard: Match within 100% + $250k</li>
+                              <li>• Expanded: 200% (under $8.3M) or salary + $8.5M (hard caps at 1st apron)</li>
+                              <li>• Can aggregate multiple contracts (hard caps at 2nd apron)</li>
+                              <li>• Full access to all trade exceptions</li>
+                            </ul>
+                          )}
+                          {selectedCap === "FirstApronTeam" && (
+                            <ul className="space-y-1">
+                              <li>• Limited to 100% + $250k matching</li>
+                              <li>• <span className="text-red-400">Cannot aggregate salaries</span></li>
+                              <li>• No expanded trade options</li>
+                              <li>• Must match nearly dollar-for-dollar</li>
+                            </ul>
+                          )}
+                          {selectedCap === "SecondApronTeam" && (
+                            <ul className="space-y-1">
+                              <li className="text-red-400">• Cannot aggregate salaries</li>
+                              <li className="text-red-400">• Cannot take back more salary</li>
+                              <li className="text-red-400">• Cannot use cash in trades</li>
+                              <li className="text-red-400">• Frozen draft pick 7 years out</li>
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Available Tools Selection */}
+                {selectedCap && (
+                  <div className="bg-gray-800 rounded-lg p-6 mb-6">
+                    <label className="block text-sm font-medium mb-2">Available Roster Tools</label>
+                    <select
+                      value={selectedTool}
+                      onChange={handleToolChange}
+                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 text-white"
+                    >
+                      <option value="">Select a tool to use...</option>
+                      {availableTools.map(tool => (
+                        <option key={tool.id} value={tool.id}>{tool.label}</option>
+                      ))}
+                    </select>
+
+                    {/* Tool Description */}
+                    {selectedTool && (
+                      <div className="mt-4 p-4 bg-gray-700 rounded-lg">
+                        <h3 className="font-semibold mb-1">
+                          {availableTools.find(t => t.id === selectedTool)?.label}
+                        </h3>
+                        <p className="text-sm text-gray-300">
+                          {availableTools.find(t => t.id === selectedTool)?.description}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Implications Display */}
+                {selectedTool && implications && (
+                  <div className="space-y-4">
+                    {/* Trade-Specific Alert for Trade Tools */}
+                    {(selectedTool.includes("Trade") || selectedTool === "TradeRoomPlus") && (
+                      <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+                        <h3 className="text-blue-400 font-semibold mb-2 flex items-center">
+                          <span className="mr-2">🔄</span>
+                          Trade Tool Selected
+                        </h3>
+                        <p className="text-blue-300 text-sm">
+                          {selectedTool === "TradeRoomPlus" && "You can absorb contracts into your cap space without matching salaries."}
+                          {selectedTool === "TradeStandard" && "You must send out roughly equal salary to what you take back."}
+                          {selectedTool === "TradeAggregated" && "You can combine multiple outgoing contracts but will trigger the second apron hard cap."}
+                          {selectedTool === "TradeExpanded" && "You can take back significantly more salary but will trigger the first apron hard cap."}
+                          {selectedTool === "TradeStandardOnly" && "Your trade flexibility is limited - no salary aggregation allowed."}
+                          {selectedTool === "TradeLimitedSevere" && "You face the most restrictive trade rules in the CBA."}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Restrictions Alert */}
+                    {implications.restrictions.length > 0 && (
+                      <div className="bg-red-900/30 border border-red-700 rounded-lg p-4">
+                        <h3 className="text-red-400 font-semibold mb-2 flex items-center">
+                          <span className="mr-2">⚠️</span>
+                          Key Restrictions
+                        </h3>
+                        <ul className="space-y-1">
+                          {implications.restrictions.map((restriction, index) => (
+                            <li key={index} className="text-red-300 text-sm">• {restriction}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {/* Room to Aprons */}
+                    {teamSalary && selectedTool && (
+                      <div className="mt-4 p-3 bg-gray-700 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2">Room to Thresholds:</h4>
+                        <div className="space-y-2 text-xs">
+                          {parseFloat(teamSalary) < 195.9 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">To 1st Apron:</span>
+                              <span className="text-yellow-400">
+                                ${(195.9 - parseFloat(teamSalary)).toFixed(1)}M
+                              </span>
+                            </div>
+                          )}
+                          {parseFloat(teamSalary) < 207.8 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-400">To 2nd Apron:</span>
+                              <span className="text-red-400">
+                                ${(207.8 - parseFloat(teamSalary)).toFixed(1)}M
+                              </span>
+                            </div>
+                          )}
+                          {parseFloat(teamSalary) >= 195.9 && (
+                            <div className="text-center text-gray-500 py-2">
+                              {parseFloat(teamSalary) >= 207.8 ? 
+                                "Already over 2nd apron - most restrictive rules apply" :
+                                "Already over 1st apron - limited flexibility"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pros */}
+                    <div className="bg-green-900/20 border border-green-700 rounded-lg p-4">
+                      <h3 className="text-green-400 font-semibold mb-2 flex items-center">
+                        <span className="mr-2">✅</span>
+                        Advantages
+                      </h3>
+                      <ul className="space-y-1">
+                        {implications.pros.map((pro, index) => (
+                          <li key={index} className="text-green-300 text-sm">• {pro}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Cons */}
+                    <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+                      <h3 className="text-yellow-400 font-semibold mb-2 flex items-center">
+                        <span className="mr-2">⚡</span>
+                        Limitations
+                      </h3>
+                      <ul className="space-y-1">
+                        {implications.cons.map((con, index) => (
+                          <li key={index} className="text-yellow-300 text-sm">• {con}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* Summary Card */}
+                {selectedCap && selectedTool && (
+                  <div className="mt-6 bg-gray-800 rounded-lg p-6">
+                    <h3 className="text-lg font-semibold mb-3">Decision Summary</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Cap Status:</span>
+                        <span className={getCapStatusColor(selectedCap)}>
+                          {capOptions.find(opt => opt.id === selectedCap)?.label}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Selected Tool:</span>
+                        <span className="text-white">
+                          {availableTools.find(t => t.id === selectedTool)?.label}
+                        </span>
+                      </div>
+                      {(selectedTool.includes("Trade") || selectedTool === "TradeRoomPlus") && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Trade Type:</span>
+                          <span className="text-blue-400">
+                            {selectedTool === "TradeRoomPlus" && "Absorbing into cap"}
+                            {selectedTool === "TradeStandard" && "Standard matching"}
+                            {selectedTool === "TradeAggregated" && "Aggregating contracts"}
+                            {selectedTool === "TradeExpanded" && "Expanded matching"}
+                            {selectedTool === "TradeStandardOnly" && "Limited matching"}
+                            {selectedTool === "TradeLimitedSevere" && "Severely restricted"}
+                          </span>
+                        </div>
+                      )}
+                      {(implications?.restrictions.includes("Hard cap at $195.9M (first apron)") || 
+                        implications?.restrictions.includes("Hard cap at $195.9M if: Contract is 3+ years OR salary is $5.7M+")) && (
+                        <div className="flex justify-between text-red-400">
+                          <span>Hard Cap:</span>
+                          <span>$195.9M (First Apron){implications?.restrictions.includes("if:") ? "*" : ""}</span>
+                        </div>
+                      )}
+                      {implications?.restrictions.includes("Triggers hard cap at $207.8M (second apron)") && (
+                        <div className="flex justify-between text-red-400">
+                          <span>Hard Cap:</span>
+                          <span>$207.8M (Second Apron)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Team Cap Impact Table */}
+                {selectedCap && selectedTool && (
+                  <div className="mt-6 bg-gray-800 rounded-lg p-6">
+                    <h3 className="text-lg font-semibold mb-4">Tool Usage Cap Impact Analysis</h3>
+                    <p className="text-xs text-gray-400 mb-3">Shows if using the selected tool would trigger a hard cap</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-700 text-xs uppercase tracking-wider">
+                            <th className="text-left py-3 px-2">Status</th>
+                            <th className="text-center py-3 px-2">Current Year</th>
+                            <th className="text-center py-3 px-2">1st Apron</th>
+                            <th className="text-center py-3 px-2">2nd Apron</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-gray-300">
+                          <tr className="border-b border-gray-700/50">
+                            <td className="py-3 px-2 font-medium">Your Team</td>
+                            <td className="text-center py-3 px-2">
+                              <div>
+                                <span className={getCapStatusColor(selectedCap)}>
+                                  {selectedCap === "RoomTeam" && "Under Cap"}
+                                  {selectedCap === "NonTaxTeam" && "Under Tax"}
+                                  {selectedCap === "TaxTeam" && "Over Tax"}
+                                  {selectedCap === "FirstApronTeam" && "Over 1st Apron"}
+                                  {selectedCap === "SecondApronTeam" && "Over 2nd Apron"}
+                                </span>
+                                {teamSalary && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    {formatSalary(teamSalary)}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              {(implications?.restrictions.includes("Hard cap at $195.9M (first apron)") || 
+                                implications?.restrictions.includes("Hard cap at $195.9M if: Contract is 3+ years OR salary is $5.7M+")) ? (
+                                <span className="text-red-400 font-semibold flex items-center justify-center">
+                                  <span className="mr-1">🔒</span> 
+                                  {implications?.restrictions.includes("if:") ? "LOCKED*" : "LOCKED"}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">—</span>
+                              )}
+                            </td>
+                            <td className="text-center py-3 px-2">
+                              {implications?.restrictions.includes("Triggers hard cap at $207.8M (second apron)") ? (
+                                <span className="text-red-400 font-semibold flex items-center justify-center">
+                                  <span className="mr-1">🔒</span> LOCKED
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">—</span>
+                              )}
+                            </td>
+                          </tr>
+                          <tr className="text-xs">
+                            <td className="py-2 px-2 text-gray-500">Threshold</td>
+                            <td className="text-center py-2 px-2 text-gray-500">
+                              {selectedCap === "RoomTeam" && "$154.6M"}
+                              {selectedCap === "NonTaxTeam" && "$187.9M"}
+                              {selectedCap === "TaxTeam" && "$195.9M"}
+                              {selectedCap === "FirstApronTeam" && "$207.8M"}
+                              {selectedCap === "SecondApronTeam" && "> $207.8M"}
+                            </td>
+                            <td className="text-center py-2 px-2 text-gray-500">$195.9M</td>
+                            <td className="text-center py-2 px-2 text-gray-500">$207.8M</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      {selectedTool === "NTMLE" && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          * LOCKED only if contract is 3+ years OR salary is $5.7M+
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* Tool-specific warnings */}
+                    {selectedTool && (
+                      <div className="mt-4 p-3 bg-gray-700 rounded-lg">
+                        <h4 className="text-sm font-semibold mb-2 text-yellow-400">⚠️ Using This Tool:</h4>
+                        <ul className="text-xs space-y-1 text-gray-300">
+                          {selectedTool === "NTMLE" && (
+                            <>
+                              <li>• If you sign for $5.7M+ or 3+ years: Hard capped at 1st apron ($195.9M)</li>
+                              <li>• If you sign for less: No hard cap triggered</li>
+                            </>
+                          )}
+                          {selectedTool === "BAE" && (
+                            <li>• Automatically hard caps your team at 1st apron ($195.9M)</li>
+                          )}
+                          {selectedTool === "SNT_Acquire" && (
+                            <li>• Automatically hard caps your team at 1st apron ($195.9M)</li>
+                          )}
+                          {selectedTool === "TradeAggregated" && (
+                            <li>• Automatically hard caps your team at 2nd apron ($207.8M)</li>
+                          )}
+                          {selectedTool === "TradeExpanded" && (
+                            <li>• Automatically hard caps your team at 1st apron ($195.9M)</li>
+                          )}
+                          {selectedTool === "TPMLE" && (
+                            <>
+                              <li>• Cannot exceed 2nd apron ($207.8M) after signing</li>
+                              <li>• No hard cap, but must stay under 2nd apron</li>
+                              <li>• Available to teams over 1st apron</li>
+                            </>
+                          )}
+                          {selectedTool === "TradeStandard" && (
+                            <li>• No hard cap implications - full flexibility maintained</li>
+                          )}
+                          {selectedTool === "VetMin" && (
+                            <li>• No hard cap implications - can sign multiple minimum contracts</li>
+                          )}
+                          {selectedTool === "RookieSign" && (
+                            <li>• No hard cap implications for draft picks</li>
+                          )}
+                          {selectedTool === "CapSpace" && (
+                            <li>• No hard cap - using available cap room</li>
+                          )}
+                          {selectedTool === "TradeRoomPlus" && (
+                            <li>• No hard cap - absorbing into cap space</li>
+                          )}
+                          {selectedTool === "TPEUse" && (
+                            <>
+                              <li>• No hard cap from using existing TPE</li>
+                              <li>• Note: Pre-existing TPEs frozen if already over 1st apron</li>
+                              <li>• TPEs expire after one year</li>
+                            </>
+                          )}
+                          {selectedTool === "TradeStandardOnly" && (
+                            <li>• No hard cap but severely limited - cannot aggregate</li>
+                          )}
+                          {selectedTool === "TradeLimitedSevere" && (
+                            <li>• Already over 2nd apron - most restrictive rules in place</li>
+                          )}
+                          {selectedTool === "Use2Way" && (
+                            <>
+                              <li>• No hard cap implications</li>
+                              <li>• Players must have 3 or fewer years of service</li>
+                            </>
+                          )}
+                          {selectedTool === "UseTPA" && (
+                            <>
+                              <li>• No automatic hard cap</li>
+                              <li>• Must apply between July 1 and January 15</li>
+                              <li>• Requires NBA approval - player must be out through June 15</li>
+                            </>
+                          )}
+                          {selectedTool === "StretchWaive" && (
+                            <>
+                              <li>• No hard cap implications</li>
+                              <li>• Dead money counts against cap for (years remaining × 2) + 1</li>
+                            </>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Example Teams Cap Situation */}
+                <div className="mt-8 bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4">Example Team Cap Situations (2025-26)</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-700 text-gray-400 uppercase">
+                          <th className="text-left py-2 px-1">Team</th>
+                          <th className="text-center py-2 px-1">Total Salary</th>
+                          <th className="text-center py-2 px-1">Status</th>
+                          <th className="text-center py-2 px-1">Example Move</th>
+                          <th className="text-center py-2 px-1">Hard Cap Result</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-300">
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">BOS</td>
+                          <td className="text-center py-2 px-1">$225.0M</td>
+                          <td className="text-center py-2 px-1 text-red-400">Over 2nd</td>
+                          <td className="text-center py-2 px-1 text-gray-500">Vet Min only</td>
+                          <td className="text-center py-2 px-1">—</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">PHX</td>
+                          <td className="text-center py-2 px-1">$219.5M</td>
+                          <td className="text-center py-2 px-1 text-red-400">Over 2nd</td>
+                          <td className="text-center py-2 px-1 text-gray-500">Limited trades</td>
+                          <td className="text-center py-2 px-1">—</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">MIN</td>
+                          <td className="text-center py-2 px-1">$205.5M</td>
+                          <td className="text-center py-2 px-1 text-orange-400">Over 1st</td>
+                          <td className="text-center py-2 px-1">Tax MLE</td>
+                          <td className="text-center py-2 px-1">None</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">LAL</td>
+                          <td className="text-center py-2 px-1">$188.3M</td>
+                          <td className="text-center py-2 px-1 text-yellow-400">Over Tax</td>
+                          <td className="text-center py-2 px-1">If uses NT-MLE</td>
+                          <td className="text-center py-2 px-1 text-red-400">🔒 1st Apron</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">NYK</td>
+                          <td className="text-center py-2 px-1">$185.7M</td>
+                          <td className="text-center py-2 px-1 text-yellow-400">Over Tax</td>
+                          <td className="text-center py-2 px-1">If aggregates</td>
+                          <td className="text-center py-2 px-1 text-red-400">🔒 2nd Apron</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">ORL</td>
+                          <td className="text-center py-2 px-1">$163.7M</td>
+                          <td className="text-center py-2 px-1 text-blue-400">Non-Tax</td>
+                          <td className="text-center py-2 px-1">Full flexibility</td>
+                          <td className="text-center py-2 px-1">—</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/30">
+                          <td className="py-2 px-1 font-medium">DET</td>
+                          <td className="text-center py-2 px-1">$136.3M</td>
+                          <td className="text-center py-2 px-1 text-green-400">Room</td>
+                          <td className="text-center py-2 px-1">Cap space</td>
+                          <td className="text-center py-2 px-1">—</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div className="mt-3 p-3 bg-gray-700 rounded text-xs">
+                      <p className="text-gray-400">
+                        <span className="font-semibold text-yellow-400">Important:</span> Teams are NOT automatically hard-capped based on salary alone. 
+                        Hard caps only trigger when using specific tools (e.g., NT-MLE for 3+ years/$5.7M+, BAE, sign-and-trade acquisitions, 
+                        salary aggregation, or expanded trade exceptions).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Salary Cap Levels Reference */}
+                <div className="mt-8 bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4">2025-26 Salary Cap Levels</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Salary Cap:</span>
+                        <span className="text-green-400">$154.6M</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Luxury Tax:</span>
+                        <span className="text-blue-400">$187.9M</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">First Apron:</span>
+                        <span className="text-yellow-400">$195.9M</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">Second Apron:</span>
+                        <span className="text-red-400">$207.8M</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trade Rules Quick Reference */}
+                <div className="mt-8 bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4">Trade Matching Rules by Cap Status</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-700">
+                          <th className="text-left py-2 px-2">Cap Status</th>
+                          <th className="text-left py-2 px-2">Salary Matching</th>
+                          <th className="text-left py-2 px-2">Can Aggregate?</th>
+                          <th className="text-left py-2 px-2">Cash Usage</th>
+                          <th className="text-left py-2 px-2">Hard Cap?</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-gray-300">
+                        <tr className="border-b border-gray-700/50">
+                          <td className="py-2 px-2 text-green-400">Room Team</td>
+                          <td className="py-2 px-2">Cap Space + $250k</td>
+                          <td className="py-2 px-2">N/A (absorbing)</td>
+                          <td className="py-2 px-2">✅ Yes</td>
+                          <td className="py-2 px-2">None</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/50">
+                          <td className="py-2 px-2 text-blue-400">Non-Tax/Tax Team</td>
+                          <td className="py-2 px-2">100% / 125% / 200%</td>
+                          <td className="py-2 px-2">✅ Yes</td>
+                          <td className="py-2 px-2">✅ Yes</td>
+                          <td className="py-2 px-2">Varies by method</td>
+                        </tr>
+                        <tr className="border-b border-gray-700/50">
+                          <td className="py-2 px-2 text-orange-400">First Apron Team</td>
+                          <td className="py-2 px-2">100% + $250k only</td>
+                          <td className="py-2 px-2">❌ No</td>
+                          <td className="py-2 px-2">✅ Yes</td>
+                          <td className="py-2 px-2">None</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 px-2 text-red-400">Second Apron Team</td>
+                          <td className="py-2 px-2">100% (no extra)</td>
+                          <td className="py-2 px-2">❌ No</td>
+                          <td className="py-2 px-2">❌ No</td>
+                          <td className="py-2 px-2">None</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3">
+                    * Teams using expanded matching (200%) or aggregation trigger hard caps
+                  </p>
+                </div>
+
+                {/* Footer */}
+                <div className="mt-8 text-center text-sm text-gray-500">
+                  <p>NBA Roster & Trade Decision Tool - Based on 2023 CBA</p>
+                  <p className="mt-1">2025-26 Season Salary Figures</p>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<NBACapDecisionTool />, document.getElementById('root'));
+    </script>
+</body>
+</html>
